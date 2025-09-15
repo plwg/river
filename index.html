@@ -270,7 +270,11 @@
                     controlsDiv.querySelector("[data-action='del']").onclick = () => deleteNote(noteData.id);
                     editInput.onkeydown = (e) => {
                         if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); controlsDiv.querySelector("[data-action='save']").click(); }
-                        if (e.key === 'Escape') { controlsDiv.querySelector("[data-action='cancel']").click(); }
+                        if (e.key === 'Escape') {
+                            e.preventDefault();
+                            controlsDiv.querySelector("[data-action='save']").click();
+                            noteInput.focus();
+                        }
                     };
                 });
             }
@@ -373,6 +377,10 @@
         });
         noteInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); saveNote(); }
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                resetNoteInput();
+            }
         });
         exportButton.addEventListener('click', exportToCSV);
         importButton.addEventListener('click', () => csvFileInput.click());
@@ -383,3 +391,4 @@
     </script>
 </body>
 </html>
+
