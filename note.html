@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title></title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        // Set theme on initial load
+        if (localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+            document.documentElement.classList.add('dark');
+        } else {
+            document.documentElement.classList.remove('dark');
+        }
+    </script>
+    <style>
+        body { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+        .focus-ring-mono:focus { --tw-ring-opacity: 1; --tw-ring-color: rgb(107 114 128 / var(--tw-ring-opacity)); }
+        .dark .focus-ring-mono:focus { --tw-ring-color: rgb(161 161 170 / var(--tw-ring-opacity)); }
+        .note-text { white-space: pre-wrap; }
+        textarea { overflow-y: hidden; }
+        .note-link, .note-tag { text-decoration: underline; text-decoration-color: rgba(37, 99, 235, 0.4); cursor: pointer; }
+        .note-link { color: #2563eb; }
+        .note-tag { color: #1d4ed8; }
+        .note-link:hover, .note-tag:hover { text-decoration-color: rgba(37, 99, 235, 1); }
+        .dark .note-link, .dark .note-tag { text-decoration-color: rgba(96, 165, 250, 0.4); }
+        .dark .note-link { color: #60a5fa; }
+        .dark .note-tag { color: #93c5fd; }
+        .dark .note-link:hover, .dark .note-tag:hover { text-decoration-color: rgba(96, 165, 250, 1); }
+        @keyframes highlight-fade { from { background-color: var(--highlight-bg); } to { background-color: transparent; } }
+        .highlight-note { --highlight-bg: rgb(254 249 195 / 0.8); animation: highlight-fade 2s ease-out forwards; }
+        .dark .highlight-note { --highlight-bg: rgb(250 204 21 / 0.3); }
+    </style>
+</head>
+<body class="bg-zinc-100 dark:bg-zinc-900 text-zinc-800 dark:text-zinc-200">
+
+    <div class="container mx-auto max-w-2xl px-4 py-8 md:py-12">
+        <div class="mb-8">
+            <div class="flex items-start space-x-2">
+                <textarea 
+                    id="note-input" 
+                    rows="1"
+                    class="flex-grow w-full p-3 bg-zinc-200 dark:bg-zinc-800 border border-transparent rounded-md focus:outline-none focus:bg-white dark:focus:bg-zinc-900 focus:ring-2 focus-ring-mono transition duration-200 resize-none"
+                ></textarea>
+                <button 
+                    id="save-button" 
+                    title="Save Note (Cmd+Enter)"
+                    class="bg-zinc-800 dark:bg-zinc-200 text-zinc-100 dark:text-zinc-800 p-3 rounded-md hover:bg-zinc-900 dark:hover:bg-white focus:outline-none focus:ring-2 focus:ring-zinc-500 dark:focus:ring-zinc-400 focus:ring-offset-2 focus:ring-offset-zinc-100 dark:focus:ring-offset-zinc-900 transition-transform transform active:scale-95"
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-6 h-6">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="m9 12.75 3 3m0 0 3-3m-3 3v-7.5" />
+                    </svg>
+                </button>
+            </div>
+        </div>
+        <div id="notes-container" class="space-y-3"></div>
+    </div>
+    
+    <div class="fixed bottom-4 left-4 flex items-center space-x-4">
+        <button id="import-button" class="text-xs text-zinc-400 dark:text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300">import</button>
+        <button id="export-button" class="text-xs text-zinc-400 dark:text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300">export</button>
+        <input type="file" id="csv-file-input" accept=".csv" class="hidden">
+    </div>
+
+    <script>
+        const noteInput = document.getElementById('note-input');
+        const saveButton = document.getElementById('save-button');
+        const notesContainer = document.getElementById('notes-container');
+        const importButton = document.getElementById('import-button');
+        const exportButton = document.getElementById('export-button');
+        const csvFileInput = document.getElementById('csv-file-input');
+
+        let allNotes = [];
+        const NOTES_STORAGE_KEY = 'notesApp.notes';
+
+        const getNotesFromStorage = () => {
+            const notesJSON = localStorage.getItem(NOTES_STORAGE_KEY);
+            return notesJSON ? JSON.parse(notesJSON) : [];
+        };
+
+        const saveNotesToStorage = (notes) => {
+            notes.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+            localStorage.setItem(NOTES_STORAGE_KEY, JSON.stringify(notes));
+        };
+
+        const autoResizeTextarea = (element) => {
+            element.style.height = 'auto';
+            element.style.height = `${element.scrollHeight}px`;
+        };
+
+        const copyToClipboard = (text, element) => {
+            const originalText = element.textContent;
+            navigator.clipboard.writeText(text).then(() => {
+                element.textContent = 'Copied!';
+                setTimeout(() => { element.textContent = originalText; }, 1500);
+            }).catch(err => console.error('Clipboard copy failed', err));
+        };
+        
+        const formatNoteContent = (text) => {
+            const noteIdPrefixes = new Map(allNotes.map(note => [note.id.substring(0, 8), note.id]));
+            const combinedRegex = /#([a-f0-9]{8})(?!\w)|#(\w+)/g;
+            return text.replace(combinedRegex, (match, noteId, tagName) => {
+                if (noteId) {
+                    const fullId = noteIdPrefixes.get(noteId);
+                    if (fullId) return `<a class="note-link" data-note-id="${fullId}" title="Jump to note ${noteId}...">${match}</a>`;
+                }
+                if (tagName) return `<a class="note-tag" data-tag="${tagName}" title="Filter by #${tagName}">${match}</a>`;
+                return match;
+            });
+        };
+
+        const appendToInput = (text) => {
+            const currentText = noteInput.value.trim();
+            noteInput.value = currentText ? `${currentText} ${text}` : `${text} `;
+            noteInput.focus();
+            noteInput.dispatchEvent(new Event('input', { bubbles: true }));
+        };
+
+        const generateUniqueId = async () => {
+            const timestamp = Date.now().toString();
+            const randomNum = window.crypto.getRandomValues(new Uint32Array(1))[0];
+            const dataToHash = `${timestamp}-${randomNum}`;
+            const encoder = new TextEncoder();
+            const data = encoder.encode(dataToHash);
+            const hashBuffer = await window.crypto.subtle.digest('SHA-256', data);
+            const hashArray = Array.from(new Uint8Array(hashBuffer));
+            return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        };
+
+        const saveNote = async () => {
+            const noteText = noteInput.value.trim();
+            if (noteText) {
+                const uniqueId = await generateUniqueId();
+                const newNote = {
+                    id: uniqueId,
+                    text: noteText,
+                    timestamp: new Date().toISOString()
+                };
+                allNotes.unshift(newNote);
+                saveNotesToStorage(allNotes);
+                // Keep text in input, just re-render the notes list
+                filterAndRenderNotes();
+            }
+        };
+        
+        const updateNote = (noteId, newText) => {
+            const noteIndex = allNotes.findIndex(note => note.id === noteId);
+            if (noteIndex > -1) {
+                allNotes[noteIndex].text = newText;
+                allNotes[noteIndex].timestamp = new Date().toISOString();
+                saveNotesToStorage(allNotes);
+                filterAndRenderNotes();
+            }
+        };
+
+        const deleteNote = (noteId) => {
+            allNotes = allNotes.filter(note => note.id !== noteId);
+            saveNotesToStorage(allNotes);
+            filterAndRenderNotes();
+        };
+
+        const filterAndRenderNotes = () => {
+            const searchTerms = noteInput.value.toLowerCase().trim().split(/\s+/).filter(Boolean);
+            let notesToRender = allNotes;
+            if (searchTerms.length > 0) {
+                const matchingNotes = [];
+                const nonMatchingNotes = [];
+                allNotes.forEach(note => {
+                    if (searchTerms.every(term => note.text.toLowerCase().includes(term))) {
+                        matchingNotes.push(note);
+                    } else {
+                        nonMatchingNotes.push(note);
+                    }
+                });
+                notesToRender = [...matchingNotes, ...nonMatchingNotes];
+            }
+            renderNotes(notesToRender);
+        };
+        
+        const renderNotes = (notesToRender) => {
+            notesContainer.innerHTML = ''; 
+            const searchTerms = noteInput.value.toLowerCase().trim().split(/\s+/).filter(Boolean);
+
+            if (allNotes.length === 0) { 
+                 notesContainer.innerHTML = '';
+            } else if (notesToRender.length === 0 && searchTerms.length > 0) {
+                 notesContainer.innerHTML = `<div class="text-center py-10"><p class="text-zinc-500 dark:text-zinc-400">No notes match your search.</p></div>`;
+            } else {
+                notesToRender.forEach(noteData => {
+                    const card = document.createElement('div');
+                    card.id = `note-${noteData.id}`;
+                    const isMatch = searchTerms.length === 0 || searchTerms.every(term => noteData.text.toLowerCase().includes(term));
+                    let cardClasses = 'bg-white/50 dark:bg-zinc-800/50 p-4 rounded-md border border-zinc-200 dark:border-zinc-700 flex flex-col transition-opacity duration-300';
+                    if (!isMatch) cardClasses += ' opacity-50';
+                    card.className = cardClasses;
+                    
+                    const textP = document.createElement('p');
+                    textP.className = 'note-text text-zinc-800 dark:text-zinc-200 break-words flex-grow';
+                    textP.innerHTML = formatNoteContent(noteData.text);
+
+                    const editInput = document.createElement('textarea');
+                    editInput.className = 'w-full p-1 bg-zinc-200 dark:bg-zinc-700 border border-zinc-300 dark:border-zinc-600 rounded-md focus:outline-none focus:ring-1 focus-ring-mono hidden resize-none flex-grow dark:text-zinc-200';
+                    editInput.value = noteData.text;
+                    editInput.oninput = () => autoResizeTextarea(editInput);
+
+                    const footerDiv = document.createElement('div');
+                    footerDiv.className = 'flex justify-between items-center mt-3';
+                    
+                    const timeP = document.createElement('p');
+                    timeP.className = 'text-xs text-zinc-400 dark:text-zinc-500';
+                    timeP.textContent = new Date(noteData.timestamp).toISOString().slice(0, 19).replace('T', ' ');
+
+                    const shortId = noteData.id.substring(0, 8);
+                    const hashIdButton = document.createElement('button');
+                    hashIdButton.className = 'text-xs text-zinc-400 dark:text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 ml-4';
+                    hashIdButton.textContent = `#${shortId}`;
+                    hashIdButton.title = `Copy ID: #${shortId}`;
+                    hashIdButton.onclick = () => copyToClipboard(`#${shortId}`, hashIdButton);
+
+                    const timeAndIdContainer = document.createElement('div');
+                    timeAndIdContainer.className = 'flex items-center';
+                    timeAndIdContainer.append(timeP, hashIdButton);
+
+                    const controlsDiv = document.createElement('div');
+                    controlsDiv.className = 'flex items-center space-x-3';
+                    ['ins', 'del', 'save', 'cancel'].forEach(label => {
+                        const button = document.createElement('button');
+                        button.textContent = label;
+                        button.dataset.action = label;
+                        let classes = 'text-xs ';
+                        if (label === 'ins' || label === 'cancel') classes += 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200';
+                        if (label === 'del') classes += 'text-red-500 hover:text-red-700 dark:hover:text-red-400';
+                        if (label === 'save') classes += 'text-green-600 dark:text-green-500 hover:text-green-800 dark:hover:text-green-400 font-medium';
+                        if (label === 'save' || label === 'cancel') classes += ' hidden';
+                        button.className = classes;
+                        controlsDiv.appendChild(button);
+                    });
+
+                    footerDiv.append(timeAndIdContainer, controlsDiv);
+                    card.append(textP, editInput, footerDiv);
+                    notesContainer.appendChild(card);
+
+                    const toggleEditMode = (isEditing) => {
+                        textP.classList.toggle('hidden', isEditing);
+                        editInput.classList.toggle('hidden', !isEditing);
+                        controlsDiv.querySelector("[data-action='ins']").classList.toggle('hidden', isEditing);
+                        controlsDiv.querySelector("[data-action='del']").classList.toggle('hidden', isEditing);
+                        controlsDiv.querySelector("[data-action='save']").classList.toggle('hidden', !isEditing);
+                        controlsDiv.querySelector("[data-action='cancel']").classList.toggle('hidden', !isEditing);
+                        if (isEditing) { autoResizeTextarea(editInput); editInput.focus(); editInput.select(); }
+                    };
+                    
+                    controlsDiv.querySelector("[data-action='ins']").onclick = () => toggleEditMode(true);
+                    controlsDiv.querySelector("[data-action='cancel']").onclick = () => { editInput.value = noteData.text; toggleEditMode(false); };
+                    controlsDiv.querySelector("[data-action='save']").onclick = () => {
+                        const newText = editInput.value.trim();
+                        if (newText && newText !== noteData.text) { updateNote(noteData.id, newText); }
+                        toggleEditMode(false);
+                    };
+                    controlsDiv.querySelector("[data-action='del']").onclick = () => deleteNote(noteData.id);
+                    editInput.onkeydown = (e) => {
+                        if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); controlsDiv.querySelector("[data-action='save']").click(); }
+                        if (e.key === 'Escape') { controlsDiv.querySelector("[data-action='cancel']").click(); }
+                    };
+                });
+            }
+        };
+
+        const loadInitialNotes = () => {
+            allNotes = getNotesFromStorage();
+            filterAndRenderNotes();
+        };
+
+        const resetNoteInput = () => { 
+            noteInput.value = ''; 
+            autoResizeTextarea(noteInput);
+            filterAndRenderNotes();
+        };
+
+        const escapeCSV = (str) => `"${(str || '').replace(/"/g, '""')}"`;
+
+        const exportToCSV = () => {
+            if (allNotes.length === 0) return alert('No notes to export.');
+            const headers = 'id,timestamp,text';
+            const rows = allNotes.map(note => [note.id, note.timestamp, escapeCSV(note.text)].join(','));
+            const csvContent = `${headers}\n${rows.join('\n')}`;
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = `notes_export_${new Date().toISOString().slice(0, 10)}.csv`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        };
+
+        const importFromCSV = (event) => {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const text = e.target.result;
+                const rows = text.split('\n');
+                const header = rows.shift().trim().split(',');
+                const [idIdx, tsIdx, textIdx] = ['id', 'timestamp', 'text'].map(h => header.indexOf(h));
+                if ([idIdx, tsIdx, textIdx].includes(-1)) return alert('Invalid CSV.');
+                
+                let updated = 0, added = 0;
+                const notesMap = new Map(allNotes.map(n => [n.id, n]));
+
+                for (const row of rows) {
+                    if (!row.trim()) continue;
+                    const values = row.split(',');
+                    const id = values[idIdx];
+                    const timestamp = values[tsIdx];
+                    const text = values.slice(textIdx).join(',').replace(/^"|"$/g, '').replace(/""/g, '"');
+                    if (!id || !timestamp || !text) continue;
+
+                    const existing = notesMap.get(id);
+                    if (existing) {
+                        if (new Date(timestamp) > new Date(existing.timestamp)) {
+                            existing.text = text;
+                            existing.timestamp = timestamp;
+                            updated++;
+                        }
+                    } else {
+                        notesMap.set(id, { id, timestamp, text });
+                        added++;
+                    }
+                }
+                allNotes = Array.from(notesMap.values());
+                saveNotesToStorage(allNotes);
+                filterAndRenderNotes();
+                alert(`Import complete. Added: ${added}, Updated: ${updated}.`);
+            };
+            reader.readAsText(file);
+            event.target.value = '';
+        };
+
+        notesContainer.addEventListener('click', (e) => {
+            const target = e.target;
+            if (target.classList.contains('note-link')) {
+                e.preventDefault();
+                const noteId = target.dataset.noteId;
+                const targetNote = document.getElementById(`note-${noteId}`);
+                if (targetNote) {
+                    targetNote.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    targetNote.classList.remove('highlight-note');
+                    void targetNote.offsetWidth; 
+                    targetNote.classList.add('highlight-note');
+                }
+            } else if (target.classList.contains('note-tag')) {
+                e.preventDefault();
+                appendToInput(`#${target.dataset.tag}`);
+            }
+        });
+
+        saveButton.addEventListener('click', saveNote);
+        noteInput.addEventListener('input', () => {
+            autoResizeTextarea(noteInput);
+            filterAndRenderNotes();
+        });
+        noteInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); saveNote(); }
+        });
+        exportButton.addEventListener('click', exportToCSV);
+        importButton.addEventListener('click', () => csvFileInput.click());
+        csvFileInput.addEventListener('change', importFromCSV);
+
+        // Initial load
+        loadInitialNotes();
+    </script>
+</body>
+</html>
+
+
