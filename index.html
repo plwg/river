@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title></title>
+    <title>Notes</title>
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -385,6 +385,17 @@
         exportButton.addEventListener('click', exportToCSV);
         importButton.addEventListener('click', () => csvFileInput.click());
         csvFileInput.addEventListener('change', importFromCSV);
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                const activeEl = document.activeElement;
+                // If focus is not on a textarea (either main input or edit input), focus the main input.
+                if (activeEl && activeEl.tagName !== 'TEXTAREA') {
+                    e.preventDefault();
+                    noteInput.focus();
+                }
+            }
+        });
 
         // Initial load
         loadInitialNotes();
