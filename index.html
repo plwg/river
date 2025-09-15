@@ -209,7 +209,16 @@
                     
                     const timeP = document.createElement('p');
                     timeP.className = 'text-xs text-zinc-400 dark:text-zinc-500';
-                    timeP.textContent = new Date(noteData.timestamp).toISOString().slice(0, 19).replace('T', ' ');
+                    
+                    // MODIFICATION: Display timestamp in local timezone
+                    const localDate = new Date(noteData.timestamp);
+                    const year = localDate.getFullYear();
+                    const month = String(localDate.getMonth() + 1).padStart(2, '0');
+                    const day = String(localDate.getDate()).padStart(2, '0');
+                    const hours = String(localDate.getHours()).padStart(2, '0');
+                    const minutes = String(localDate.getMinutes()).padStart(2, '0');
+                    const seconds = String(localDate.getSeconds()).padStart(2, '0');
+                    timeP.textContent = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
 
                     const shortId = noteData.id.substring(0, 8);
                     const hashIdButton = document.createElement('button');
@@ -283,7 +292,7 @@
         const exportToCSV = () => {
             if (allNotes.length === 0) return alert('No notes to export.');
             const headers = 'id,timestamp,text';
-            const rows = allNotes.map(note => [note.id, note.timestamp, escapeCSV(note.text)].join(','));
+            const rows = allNotes.map(note => [note.id, note.timestamp, note.text].map(escapeCSV).join(','));
             const csvContent = `${headers}\n${rows.join('\n')}`;
             const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
             const link = document.createElement('a');
@@ -311,21 +320,22 @@
 
                 for (const row of rows) {
                     if (!row.trim()) continue;
-                    const values = row.split(',');
-                    const id = values[idIdx];
-                    const timestamp = values[tsIdx];
-                    const text = values.slice(textIdx).join(',').replace(/^"|"$/g, '').replace(/""/g, '"');
-                    if (!id || !timestamp || !text) continue;
+                    // This is a simplified parser and may not handle all edge cases.
+                    const values = row.match(/(".*?"|[^",]+)(?=\s*,|\s*$)/g) || [];
+                    const id = values[idIdx]?.replace(/"/g, '');
+                    const timestamp = values[tsIdx]?.replace(/"/g, '');
+                    const noteText = values[textIdx]?.replace(/^"|"$/g, '').replace(/""/g, '"');
+                    if (!id || !timestamp || !noteText) continue;
 
                     const existing = notesMap.get(id);
                     if (existing) {
                         if (new Date(timestamp) > new Date(existing.timestamp)) {
-                            existing.text = text;
+                            existing.text = noteText;
                             existing.timestamp = timestamp;
                             updated++;
                         }
                     } else {
-                        notesMap.set(id, { id, timestamp, text });
+                        notesMap.set(id, { id, timestamp, text: noteText });
                         added++;
                     }
                 }
@@ -373,5 +383,3 @@
     </script>
 </body>
 </html>
-
-
