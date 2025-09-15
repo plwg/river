@@ -314,22 +314,75 @@
             const reader = new FileReader();
             reader.onload = (e) => {
                 const text = e.target.result;
-                const rows = text.split('\n');
-                const header = rows.shift().trim().split(',');
+                
+                // A robust CSV parser to handle newlines and quotes.
+                const parseCSV = (csvText) => {
+                    const rows = [];
+                    if (!csvText) return rows;
+
+                    let fields = [];
+                    let field = '';
+                    let inQuotes = false;
+                    // Normalize newlines and add a trailing newline to ensure the last row is processed.
+                    const content = csvText.replace(/\r\n/g, '\n').trim() + '\n';
+
+                    for (let i = 0; i < content.length; i++) {
+                        const char = content[i];
+                        
+                        if (inQuotes) {
+                            if (char === '"') {
+                                // Check for escaped quote
+                                if (i + 1 < content.length && content[i+1] === '"') {
+                                    field += '"';
+                                    i++; // Skip the second quote of the pair
+                                } else {
+                                    inQuotes = false;
+                                }
+                            } else {
+                                field += char;
+                            }
+                        } else {
+                            if (char === '"') {
+                                inQuotes = true;
+                            } else if (char === ',') {
+                                fields.push(field);
+                                field = '';
+                            } else if (char === '\n') {
+                                fields.push(field);
+                                rows.push(fields);
+                                fields = [];
+                                field = '';
+                            } else {
+                                field += char;
+                            }
+                        }
+                    }
+                    return rows;
+                };
+
+                const allRows = parseCSV(text);
+
+                if (allRows.length < 1) return alert('CSV file is empty or invalid.');
+                
+                const header = allRows.shift();
+                
                 const [idIdx, tsIdx, textIdx] = ['id', 'timestamp', 'text'].map(h => header.indexOf(h));
-                if ([idIdx, tsIdx, textIdx].includes(-1)) return alert('Invalid CSV.');
+
+                if ([idIdx, tsIdx, textIdx].includes(-1)) {
+                    return alert('Invalid CSV. Header must contain "id", "timestamp", and "text" columns.');
+                }
                 
                 let updated = 0, added = 0;
                 const notesMap = new Map(allNotes.map(n => [n.id, n]));
 
-                for (const row of rows) {
-                    if (!row.trim()) continue;
-                    // This is a simplified parser and may not handle all edge cases.
-                    const values = row.match(/(".*?"|[^",]+)(?=\s*,|\s*$)/g) || [];
-                    const id = values[idIdx]?.replace(/"/g, '');
-                    const timestamp = values[tsIdx]?.replace(/"/g, '');
-                    const noteText = values[textIdx]?.replace(/^"|"$/g, '').replace(/""/g, '"');
-                    if (!id || !timestamp || !noteText) continue;
+                for (const values of allRows) {
+                    if (values.length !== header.length) continue; // Skip malformed rows
+
+                    const id = values[idIdx];
+                    const timestamp = values[tsIdx];
+                    const noteText = values[textIdx];
+
+                    if (!id || !timestamp || typeof noteText === 'undefined') continue;
 
                     const existing = notesMap.get(id);
                     if (existing) {
@@ -402,4 +455,5 @@
     </script>
 </body>
 </html>
+
 
