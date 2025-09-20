@@ -312,8 +312,7 @@
                         if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); controlsDiv.querySelector("[data-action='save']").click(); }
                         if (e.key === 'Escape') {
                             e.preventDefault();
-                            controlsDiv.querySelector("[data-action='save']").click();
-                            noteInput.focus();
+                            controlsDiv.querySelector("[data-action='cancel']").click();
                         }
                     };
                 });
