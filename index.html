@@ -97,17 +97,58 @@
             }).catch(err => console.error('Clipboard copy failed', err));
         };
         
+        const escapeHTML = (str) => {
+            const p = document.createElement('p');
+            p.textContent = str;
+            return p.innerHTML;
+        };
+
         const formatNoteContent = (text) => {
             const noteIdPrefixes = new Map(allNotes.map(note => [note.id.substring(0, 8), note.id]));
-            const combinedRegex = /#([a-f0-9]{8})(?!\w)|#(\w+)/g;
-            return text.replace(combinedRegex, (match, noteId, tagName) => {
-                if (noteId) {
+            // Regex to find URLs, note IDs, and tags. The order is important for correct matching.
+            const combinedRegex = /(https?:\/\/[^\s<>"'`]+)|#([a-f0-9]{8})(?!\w)|#(\w+)/g;
+    
+            let result = '';
+            let lastIndex = 0;
+            let match;
+
+            // Use exec() in a loop to iterate over all matches, which allows us to process the text *between* matches.
+            while ((match = combinedRegex.exec(text)) !== null) {
+                // 1. Append and escape the plain text part before the current match.
+                result += escapeHTML(text.substring(lastIndex, match.index));
+
+                const matchedString = match[0];
+                const url = match[1];
+                const noteId = match[2];
+                const tagName = match[3];
+
+                // 2. Process and append the matched link/tag.
+                if (url) {
+                    // It's a URL. Create a clickable link.
+                    result += `<a href="${url}" target="_blank" rel="noopener noreferrer" class="note-link">${escapeHTML(url)}</a>`;
+                } else if (noteId) {
                     const fullId = noteIdPrefixes.get(noteId);
-                    if (fullId) return `<a class="note-link" data-note-id="${fullId}" title="Jump to note ${noteId}...">${match}</a>`;
+                    if (fullId) {
+                        // It's a valid note ID. Create a link to jump to the note.
+                        result += `<a class="note-link" data-note-id="${fullId}" title="Jump to note ${noteId}...">${matchedString}</a>`;
+                    } else {
+                        // Matched a potential note ID format, but it's not in our records. Treat as plain text.
+                        result += escapeHTML(matchedString);
+                    }
+                } else if (tagName) {
+                    // It's a tag. Create a filter link.
+                    result += `<a class="note-tag" data-tag="${tagName}" title="Filter by #${tagName}">${matchedString}</a>`;
                 }
-                if (tagName) return `<a class="note-tag" data-tag="${tagName}" title="Filter by #${tagName}">${match}</a>`;
-                return match;
-            });
+                
+                lastIndex = combinedRegex.lastIndex;
+            }
+
+            // 3. Append and escape any remaining plain text after the last match.
+            if (lastIndex < text.length) {
+                result += escapeHTML(text.substring(lastIndex));
+            }
+
+            return result;
         };
 
         const appendToInput = (text) => {
@@ -183,9 +224,9 @@
             const searchTerms = noteInput.value.toLowerCase().trim().split(/\s+/).filter(Boolean);
 
             if (allNotes.length === 0) { 
-                 notesContainer.innerHTML = '';
+                notesContainer.innerHTML = '';
             } else if (notesToRender.length === 0 && searchTerms.length > 0) {
-                 notesContainer.innerHTML = `<div class="text-center py-10"><p class="text-zinc-500 dark:text-zinc-400">No notes match your search.</p></div>`;
+                notesContainer.innerHTML = `<div class="text-center py-10"><p class="text-zinc-500 dark:text-zinc-400">No notes match your search.</p></div>`;
             } else {
                 notesToRender.forEach(noteData => {
                     const card = document.createElement('div');
@@ -210,7 +251,6 @@
                     const timeP = document.createElement('p');
                     timeP.className = 'text-xs text-zinc-400 dark:text-zinc-500';
                     
-                    // MODIFICATION: Display timestamp in local timezone
                     const localDate = new Date(noteData.timestamp);
                     const year = localDate.getFullYear();
                     const month = String(localDate.getMonth() + 1).padStart(2, '0');
@@ -407,7 +447,7 @@
 
         notesContainer.addEventListener('click', (e) => {
             const target = e.target;
-            if (target.classList.contains('note-link')) {
+            if (target.classList.contains('note-link') && target.dataset.noteId) {
                 e.preventDefault();
                 const noteId = target.dataset.noteId;
                 const targetNote = document.getElementById(`note-${noteId}`);
@@ -455,5 +495,3 @@
     </script>
 </body>
 </html>
-
-
