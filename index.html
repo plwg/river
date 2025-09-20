@@ -312,6 +312,7 @@
                         if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); controlsDiv.querySelector("[data-action='save']").click(); }
                         if (e.key === 'Escape') {
                             e.preventDefault();
+                            e.stopPropagation(); // Prevent document listener from re-focusing main input
                             controlsDiv.querySelector("[data-action='cancel']").click();
                         }
                     };
@@ -494,3 +495,5 @@
     </script>
 </body>
 </html>
+
+
